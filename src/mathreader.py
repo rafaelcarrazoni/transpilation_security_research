@@ -72,21 +72,50 @@ def ler_titulos_enw(caminho_enw):
     return titulos
 
 
+def _listar_arquivos_compatíveis(caminho):
+    """Resolve um caminho para um arquivo único ou para uma pasta com vários arquivos."""
+    caminho = Path(caminho)
+    if caminho.is_file():
+        return [caminho]
+
+    if caminho.is_dir():
+        extensoes = {".csv", ".enw", ".txt"}
+        arquivos = [
+            arquivo for arquivo in sorted(caminho.rglob("*"))
+            if arquivo.is_file() and arquivo.suffix.lower() in extensoes
+        ]
+        if not arquivos:
+            raise FileNotFoundError(f"Nenhum arquivo compatível encontrado em: {caminho}")
+        return arquivos
+
+    raise FileNotFoundError(f"Arquivo ou pasta não encontrado: {caminho}")
+
+
 # ---------------------------------------------------------------------------
 # Detecção automática de formato
 # ---------------------------------------------------------------------------
 def ler_titulos(caminho, coluna_titulo="Document Title"):
     """Detecta o formato pelo sufixo e delega para o leitor adequado."""
-    sufixo = Path(caminho).suffix.lower()
-    if sufixo in (".enw", ".enw.txt"):
-        return ler_titulos_enw(caminho)
-    if sufixo in (".csv", ".txt"):
-        return ler_titulos_csv(caminho, coluna_titulo)
-    # fallback: tenta ENW se o CSV falhar
-    try:
-        return ler_titulos_csv(caminho, coluna_titulo)
-    except Exception:
-        return ler_titulos_enw(caminho)
+    arquivos = _listar_arquivos_compatíveis(caminho)
+    titulos = []
+
+    for arquivo in arquivos:
+        sufixo = arquivo.suffix.lower()
+        try:
+            if sufixo in (".enw", ".enw.txt"):
+                titulos.extend(ler_titulos_enw(arquivo))
+            elif sufixo in (".csv", ".txt"):
+                titulos.extend(ler_titulos_csv(arquivo, coluna_titulo))
+            else:
+                try:
+                    titulos.extend(ler_titulos_csv(arquivo, coluna_titulo))
+                except Exception:
+                    titulos.extend(ler_titulos_enw(arquivo))
+        except (FileNotFoundError, KeyError):
+            continue
+
+    titulos_sem_repeticao = list(dict.fromkeys(t.strip() for t in titulos if t and t.strip()))
+    return titulos_sem_repeticao
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +170,7 @@ def contar_artigos(caminho, artigos, coluna_titulo="Document Title"):
 # ---------------------------------------------------------------------------
 def main():
     if len(sys.argv) < 2:
-        print("Uso: python contador.py <arquivo.csv|arquivo.enw> [coluna_titulo]")
+        print("Uso: python contador.py <arquivo.csv|arquivo.enw|pasta> [coluna_titulo]")
         sys.exit(1)
 
     caminho = sys.argv[1]
