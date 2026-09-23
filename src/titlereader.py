@@ -74,7 +74,10 @@ def ler_todos_artigos_exportados(caminho_exports="exports", coluna_titulo=None):
 
 def main():
     resultado = ler_todos_artigos_exportados()
-    print(resultado["total_artigos_unicos"])
+
+    with open("tunicos_encontrados.txt", "w") as arquivo:
+        for artigo in resultado["artigos"]:
+            arquivo.write(f"{artigo} \n")
 
 
 if __name__ == "__main__":
