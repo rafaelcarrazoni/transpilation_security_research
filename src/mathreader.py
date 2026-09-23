@@ -8,8 +8,48 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Leitura de CSV (IEEE)
 # ---------------------------------------------------------------------------
-def ler_titulos_csv(caminho_csv, coluna_titulo="Document Title"):
-    """Lê todos os títulos de um CSV exportado da IEEE."""
+def _normalizar_nome_campo(valor):
+    """Normaliza nomes de colunas para comparação entre diferentes exportações."""
+    if valor is None:
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", str(valor).lower()).strip()
+
+
+def _resolver_coluna_titulo(fieldnames, coluna_titulo=None):
+    """Resolve automaticamente a coluna com o título em diferentes formatos de export."""
+    if not fieldnames:
+        return coluna_titulo
+
+    aliases = {
+        "document title",
+        "title",
+        "item title",
+        "paper title",
+        "article title",
+        "titulo",
+        "titulo do artigo",
+    }
+
+    if coluna_titulo:
+        coluna_esperada = _normalizar_nome_campo(coluna_titulo)
+        for nome in fieldnames:
+            if _normalizar_nome_campo(nome) == coluna_esperada:
+                return nome
+
+    for nome in fieldnames:
+        if _normalizar_nome_campo(nome) in aliases:
+            return nome
+
+    for nome in fieldnames:
+        nome_normalizado = _normalizar_nome_campo(nome)
+        if "title" in nome_normalizado or "titulo" in nome_normalizado:
+            return nome
+
+    return coluna_titulo or fieldnames[0]
+
+
+def ler_titulos_csv(caminho_csv, coluna_titulo=None):
+    """Lê todos os títulos de um CSV exportado da IEEE, Scopus, Springer etc."""
     caminho = Path(caminho_csv)
     if not caminho.is_file():
         raise FileNotFoundError(f"Arquivo não encontrado: {caminho_csv}")
@@ -17,15 +57,17 @@ def ler_titulos_csv(caminho_csv, coluna_titulo="Document Title"):
     titulos = []
     with open(caminho, "r", encoding="utf-8-sig", newline="") as f:
         leitor = csv.DictReader(f)
+        fieldnames = leitor.fieldnames or []
+        coluna_titulo_real = _resolver_coluna_titulo(fieldnames, coluna_titulo)
 
-        if coluna_titulo not in (leitor.fieldnames or []):
+        if coluna_titulo_real not in fieldnames:
             raise KeyError(
-                f"Coluna '{coluna_titulo}' não encontrada no CSV. "
-                f"Colunas disponíveis: {leitor.fieldnames}"
+                f"Coluna de título não encontrada no CSV. "
+                f"Colunas disponíveis: {fieldnames}"
             )
 
         for linha in leitor:
-            titulo = (linha.get(coluna_titulo) or "").strip()
+            titulo = (linha.get(coluna_titulo_real) or "").strip()
             if titulo:
                 titulos.append(titulo)
     return titulos
@@ -94,7 +136,7 @@ def _listar_arquivos_compatíveis(caminho):
 # ---------------------------------------------------------------------------
 # Detecção automática de formato
 # ---------------------------------------------------------------------------
-def ler_titulos(caminho, coluna_titulo="Document Title"):
+def ler_titulos(caminho, coluna_titulo=None):
     """Detecta o formato pelo sufixo e delega para o leitor adequado."""
     arquivos = _listar_arquivos_compatíveis(caminho)
     titulos = []
@@ -130,7 +172,7 @@ def _normalizar(txt):
     return txt
 
 
-def contar_artigos(caminho, artigos, coluna_titulo="Document Title"):
+def contar_artigos(caminho, artigos, coluna_titulo=None):
     """
     Conta quantos artigos do vetor estão no arquivo (IEEE CSV ou ACM ENW).
     Retorna um dicionário com o resultado.
@@ -174,7 +216,7 @@ def main():
         sys.exit(1)
 
     caminho = sys.argv[1]
-    coluna_titulo = sys.argv[2] if len(sys.argv) > 2 else "Document Title"
+    coluna_titulo = sys.argv[2] if len(sys.argv) > 2 else None
 
     artigos = [
         "Translating C to safer Rust",
